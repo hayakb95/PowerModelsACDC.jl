@@ -15,6 +15,7 @@ makedocs(
         "Home" => "index.md"
         "Manual" => [
             "Getting Started" => "quickguide.md"
+            "GPU execution for HVDC OPF" => "gpu.md"
             "Results" => "result-data.md"
         ]
         "Library" => [
