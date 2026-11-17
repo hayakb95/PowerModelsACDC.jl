@@ -1,5 +1,7 @@
 using Test, CUDA, CUDSS, MadNLPGPU
 include("opf.jl")
+include("validation/sharing.jl")
+include("validation/records.jl")
 
 # This is an explicit GPU suite: unavailable CUDA is a failure, not a skipped pass.
 CUDA.functional() || error("Run this suite on a CUDA-capable GPU")
@@ -9,8 +11,8 @@ CUDA.allowscalar(false)
     for case in ("case5_acdc.m", "case5_lcc.m")
         @testset "$case" begin
             path = pkgdir(PowerModelsACDC, "test", "data", case)
-            cpu, cpu_pm = solve_hvdc_example(; gpu=false, casefile=path)
-            gpu, gpu_pm = solve_hvdc_example(; gpu=true, casefile=path)
+            cpu, cpu_pm = solve_hvdc_example(; gpu=false, casefile=path, matched_treatments=true)
+            gpu, gpu_pm = solve_hvdc_example(; gpu=true, casefile=path, matched_treatments=true)
             for (result, pm) in ((cpu, cpu_pm), (gpu, gpu_pm))
                 @test result["termination_status"] == JuMP.MOI.LOCALLY_SOLVED
                 @test result["primal_status"] == JuMP.MOI.FEASIBLE_POINT
@@ -27,6 +29,15 @@ CUDA.allowscalar(false)
             @test raw.solver.kkt.linear_solver isa MadNLPGPU.CUDSSSolver
             @test raw.solver.kkt.linear_solver.tril isa CUDA.CUSPARSE.CuSparseMatrixCSC
             @test raw.nlp.inner.meta.x0 isa Vector{Float64}
+            cpu_record = GPUValidationRecords.capture(cpu,cpu_pm,path)
+            gpu_record = GPUValidationRecords.capture(gpu,gpu_pm,path;gpu_modules=(;CUDA,CUDSS,MadNLPGPU))
+            @test cpu_record["passed"]
+            @test gpu_record["passed"]
+            templates = Dict(k=>get(PowerModels.sol(cpu_pm),Symbol(k),Dict()) for k in VerifiedSharing.TABLES)
+            report = VerifiedSharing.compare_sharing(cpu_record,gpu_record,cpu_pm.model,
+                VerifiedSharing.generator_map(cpu_pm); expected=VerifiedSharing.fingerprints(cpu_pm.model),templates=templates)
+            @test report["passed"]
+            @test haskey(report,"strict_passed")
         end
     end
 end

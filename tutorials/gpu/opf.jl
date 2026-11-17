@@ -1,7 +1,8 @@
 using JuMP, PowerModels, PowerModelsACDC, MadNLP
 
 """
-    solve_hvdc_example(; gpu=true, casefile=nothing, formulation=ACPPowerModel)
+    solve_hvdc_example(; gpu=true, casefile=nothing, formulation=ACPPowerModel,
+                       matched_treatments=false, max_wall_time=Inf)
 
 Solve the bundled meshed VSC case or an AC/DC case supplied by the caller.
 With `gpu=true`, MadNLP's solver arrays and cuDSS factorization use CUDA;
@@ -12,6 +13,8 @@ function solve_hvdc_example(;
     gpu=true,
     casefile=pkgdir(PowerModelsACDC, "test", "data", "case5_acdc.m"),
     formulation=PowerModels.ACPPowerModel,
+    matched_treatments=false,
+    max_wall_time=Inf,
 )
     # Load CUDA, CUDSS and MadNLPGPU before calling this function in GPU mode.
     if gpu
@@ -36,6 +39,13 @@ function solve_hvdc_example(;
     end
     options = Dict{String,Any}("tol" => 1e-8, "acceptable_tol" => 1e-8,
         "bound_relax_factor" => 1e-8, "max_iter" => 1000, "blas_num_threads" => 1)
+    if matched_treatments
+        # Use the condensed GPU system's treatments on both backends, while
+        # validating the original JuMP constraints and bounds after the solve.
+        options["equality_treatment"] = MadNLP.RelaxEquality
+        options["fixed_variable_treatment"] = MadNLP.RelaxBound
+    end
+    isfinite(max_wall_time) && (options["max_wall_time"] = max_wall_time)
     if gpu
         options["array_type"] = CUDA.CuArray
         options["linear_solver"] = MadNLPGPU.CUDSSSolver

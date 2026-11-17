@@ -10,3 +10,4 @@ docs/.documenter
 .project
 .tags
 .vscode/
+tutorials/gpu/results/

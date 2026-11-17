@@ -6,6 +6,8 @@ MadNLP = "2621e9c9-9eb4-46b1-8089-e8c72242dfb6"
 MadNLPGPU = "d72a61cc-809d-412f-99be-fd81f4b8a598"
 PowerModels = "c36e90e8-916a-50a6-bd94-075b64ef4655"
 PowerModelsACDC = "ff45984e-d068-5f4c-9e32-c4133509d236"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
