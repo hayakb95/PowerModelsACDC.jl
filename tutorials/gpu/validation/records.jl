@@ -9,7 +9,6 @@ using ..VerifiedSharing
 function capture(result, pm, casefile; gpu_modules=nothing)
     raw = JuMP.unsafe_backend(pm.model)
     solver = raw.solver
-    options = MadNLP.get_opt(solver)
     gpu = gpu_modules !== nothing
     storage = Dict{String,Any}("model_evaluation_backend"=>"cpu",
         "nlp_vector_type"=>string(typeof(raw.nlp.meta.x0)),
@@ -24,20 +23,33 @@ function capture(result, pm, casefile; gpu_modules=nothing)
         storage["cpu_evaluator"] = raw.nlp.inner.meta.x0 isa Vector{Float64}
         storage["cuDSS_info"] = Int(gpu_modules.CUDSS.cudss_get(solver.kkt.linear_solver.inner,"info"))
     end
+    execution_checks = gpu ? Dict("gpu_storage"=>all(storage[k] for k in
+        ("gpu_nlp_vector","gpu_solver_vector","gpu_factorization_matrix","gpu_linear_solver","cpu_evaluator")),
+        "cuDSS_success"=>storage["cuDSS_info"] == 0) : Dict{String,Bool}()
+    device = gpu ? Dict("name"=>gpu_modules.CUDA.name(gpu_modules.CUDA.device()),
+        "uuid"=>string(gpu_modules.CUDA.uuid(gpu_modules.CUDA.device()))) : nothing
+    return capture_record(result,pm,casefile,solver; native_status=raw.result.status,
+        storage,execution_checks,gpu,device)
+end
+
+"Shared physical validation; backend adapters must supply their execution checks."
+function capture_record(result,pm,casefile,solver; native_status,storage,execution_checks,
+    gpu=false,device=nothing,versions=Dict{String,String}())
+    options = MadNLP.get_opt(solver)
     record = merge(VerifiedSharing.fingerprints(pm.model), Dict{String,Any}(
         "format_version"=>1,"mode"=>gpu ? "gpu" : "cpu",
         "case"=>basename(casefile),"case_sha256"=>bytes2hex(sha256(read(casefile))),
         "formulation"=>"acp","variant"=>"base",
         "termination_status"=>string(result["termination_status"]),
         "primal_status"=>string(result["primal_status"]),
-        "native_status"=>string(raw.result.status),
+        "native_status"=>string(native_status),
         "objective"=>result["objective"],"solution"=>result["solution"],
         "variable_values"=>Dict(JuMP.name(v)=>JuMP.value(v) for v in JuMP.all_variables(pm.model)),
-        "storage"=>storage,
+        "storage"=>storage,"execution_checks"=>execution_checks,
         "input_component_counts"=>Dict(k=>length(get(pm.data,k,Dict())) for k in VerifiedSharing.TABLES),
         "versions"=>Dict("Julia"=>string(VERSION),"JuMP"=>string(pkgversion(JuMP)),
             "PowerModels"=>string(pkgversion(PowerModels)),"PowerModelsACDC"=>string(pkgversion(PowerModelsACDC)),
-            "MadNLP"=>string(pkgversion(MadNLP))),
+            "MadNLP"=>string(pkgversion(MadNLP)),versions...),
         "resolved_options"=>Dict("tol"=>options.tol,"acceptable_tol"=>options.acceptable_tol,
             "bound_relax_factor"=>options.bound_relax_factor,
             "equality_treatment"=>string(options.equality_treatment),
@@ -48,15 +60,11 @@ function capture(result, pm, casefile; gpu_modules=nothing)
     merge!(record,detail)
     record["passed"] = all(values(checks)) &&
         result["termination_status"] in (JuMP.MOI.LOCALLY_SOLVED,JuMP.MOI.OPTIMAL) &&
-        result["primal_status"] == JuMP.MOI.FEASIBLE_POINT && raw.result.status == MadNLP.SOLVE_SUCCEEDED &&
+        result["primal_status"] == JuMP.MOI.FEASIBLE_POINT && native_status == MadNLP.SOLVE_SUCCEEDED &&
         all(!isempty(result["solution"][k]) for k in ("busdc","branchdc","convdc")) &&
-        (!gpu || (all(storage[k] for k in ("gpu_nlp_vector","gpu_solver_vector",
-            "gpu_factorization_matrix","gpu_linear_solver","cpu_evaluator")) && storage["cuDSS_info"] == 0))
+        all(values(execution_checks))
     record["original_checks"] = checks
-    if gpu
-        cuda = gpu_modules.CUDA
-        record["device"] = Dict("name"=>cuda.name(cuda.device()),"uuid"=>string(cuda.uuid(cuda.device())))
-    end
+    device === nothing || (record["device"] = device)
     return record
 end
 

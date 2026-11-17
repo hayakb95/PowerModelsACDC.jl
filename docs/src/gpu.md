@@ -11,6 +11,11 @@ MadNLP transfers those evaluations to its GPU solver. It does not require rewrit
 the converter equations. Performance speedups are not a requirement for this
 example.
 
+For GPU evaluation of the model functions and derivatives as well, see
+[ExaModels evaluation for HVDC OPF](@ref). That workflow has a separate optional
+environment and compares ExaModels CPU/CUDA evaluations with the original JuMP
+expressions.
+
 ## Optional environment
 
 The example has its own environment; CUDA packages are not required by the main
